@@ -51,3 +51,58 @@ func TestNew(t *testing.T) {
 --- PASS: TestNew (0.00s)
 PASS
 ````
+
+### 获取goroutine id方式
+1. 从stack获得gid, 本包默认使用的。性能会较差10000次>50ms。
+````go
+package main
+
+import (
+    "bytes"
+    "fmt"
+    "runtime"
+    "strconv"
+)
+
+func main() {
+    fmt.Println(GetGID())
+}
+
+func GetGID() uint64 {
+    b := make([]byte, 64)
+    b = b[:runtime.Stack(b, false)]
+    b = bytes.TrimPrefix(b, []byte("goroutine "))
+    b = b[:bytes.IndexByte(b, ' ')]
+    n, _ := strconv.ParseUint(string(b), 10, 64)
+    return n
+}
+````
+
+2. 修改go的代码 `src/runtime/runtime2.go`, 但以后只能在自己的go代码编译。
+````go
+func Goid() int64 {
+    _g_ := getg()
+    return _g_.goid
+}
+````
+
+3. CGo去获得gid, 不影响移植和性能。但要开启cgo.
+
+````cgo
+// 文件id.c:
+#include "runtime.h"
+
+int64 ·Id(void) {
+    return g-&gt;goid;
+}
+````
+
+````go
+// 文件id.go
+package id
+
+func Id() int64
+````
+
+
+4. 通过汇编获取gid。那就是通过汇编获取goroutine id的方法。原理是：通过getg方法（汇编实现）获取到当前goroutine的g结构地址，根据偏移量计算出成员goid int的地址，然后取出该值即可。

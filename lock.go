@@ -4,7 +4,8 @@ import (
 	"sync"
 )
 
-type lock struct {
+// Lock for reentrant
+type Lock struct {
 	lock     sync.Mutex
 	ch       chan struct{}
 	times    uint64
@@ -12,12 +13,9 @@ type lock struct {
 	goIDFunc func() uint64
 }
 
-func (l *lock) Lock() {
-	if l.goIDFunc == nil {
-		panic("reentrant lock: goIDFunc is nil")
-	}
-
-	gid := l.goIDFunc()
+// Lock reentrant lock
+func (l *Lock) Lock() {
+	gid := l.getGID()
 	if l.reentrant(gid) {
 		return
 	}
@@ -28,16 +26,22 @@ func (l *lock) Lock() {
 	defer l.lock.Unlock()
 
 	if l.gid != 0 || l.times != 0 {
-		panic("reentrant lock: wrong state")
+		panic("reentrant Lock: wrong state")
 	}
 
 	l.gid = gid
 	l.times = 1
 }
 
-func (l *lock) reentrant(gid uint64) bool {
+// reentrant check if the current goroutine is locking it again. If yes, return true.
+// Otherwise return false. Init the channel if it is nil.
+func (l *Lock) reentrant(gid uint64) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
+
+	if l.ch == nil {
+		l.ch = make(chan struct{}, 1)
+	}
 
 	if l.gid == gid {
 		l.times++
@@ -47,12 +51,13 @@ func (l *lock) reentrant(gid uint64) bool {
 	return false
 }
 
-func (l *lock) Unlock() {
+// Unlock reentrant lock
+func (l *Lock) Unlock() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	if l.times == 0 {
-		panic("reentrant lock: unlock of unlocked mutex")
+		panic("reentrant Lock: unlock of unlocked mutex")
 	}
 
 	l.times--
@@ -64,20 +69,20 @@ func (l *lock) Unlock() {
 	select {
 	case <-l.ch:
 	default:
-		panic("reentrant lock: select went wrong")
+		panic("reentrant Lock: select went wrong")
 	}
 }
 
-// New a reentrant lock
-func New(options ...Option) sync.Locker {
-	l := &lock{
-		ch:       make(chan struct{}, 1),
-		goIDFunc: defaultGetGoIDFunc,
+// getGID return a gid for current goroutine
+func (l *Lock) getGID() uint64 {
+	if l.goIDFunc == nil {
+		return defaultGetGoIDFunc()
 	}
 
-	for _, option := range options {
-		option.apply(l)
-	}
+	return l.goIDFunc()
+}
 
-	return l
+// SetGidFunc set diy get gid function
+func (l *Lock) SetGidFunc(f func() uint64) {
+	l.goIDFunc = f
 }

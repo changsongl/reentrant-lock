@@ -17,7 +17,7 @@ func TestNew(t *testing.T) {
 		wg.Done()
 	}
 
-	l := New()
+	l := Lock{}
 
 	go func() {
 		l.Lock()

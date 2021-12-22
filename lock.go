@@ -11,10 +11,15 @@ type Lock struct {
 	times    uint64
 	gid      uint64 // goroutine id
 	goIDFunc func() uint64
+	once     sync.Once
 }
 
 // Lock reentrant lock
 func (l *Lock) Lock() {
+	l.once.Do(func() {
+		l.ch = make(chan struct{}, 1)
+	})
+
 	gid := l.getGID()
 	if l.reentrant(gid) {
 		return
@@ -38,10 +43,6 @@ func (l *Lock) Lock() {
 func (l *Lock) reentrant(gid uint64) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-
-	if l.ch == nil {
-		l.ch = make(chan struct{}, 1)
-	}
 
 	if l.gid == gid {
 		l.times++
